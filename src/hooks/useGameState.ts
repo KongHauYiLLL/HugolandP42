@@ -615,58 +615,14 @@ const useGameState = () => {
   const startCombat = useCallback(() => {
     if (!gameState) return;
 
-    // Show adventure skill selection modal (30% chance)
-    if (Math.random() < 0.3) {
-      const availableSkills = generateAdventureSkills();
-      updateGameState(state => ({
-        ...state,
-        adventureSkills: {
-          ...state.adventureSkills,
-          availableSkills,
-          showSelectionModal: true,
-          selectedSkill: null,
-          skillEffects: {
-            skipCardUsed: false,
-            metalShieldUsed: false,
-            dodgeUsed: false,
-            truthLiesActive: false,
-            lightningChainActive: false,
-            rampActive: false,
-            berserkerActive: false,
-            vampiricActive: false,
-            phoenixUsed: false,
-            timeSlowActive: false,
-            criticalStrikeActive: false,
-            shieldWallActive: false,
-            poisonBladeActive: false,
-            arcaneShieldActive: false,
-            battleFrenzyActive: false,
-            elementalMasteryActive: false,
-            shadowStepUsed: false,
-            healingAuraActive: false,
-            doubleStrikeActive: false,
-            manaShieldActive: false,
-            berserkRageActive: false,
-            divineProtectionUsed: false,
-            stormCallActive: false,
-            bloodPactActive: false,
-            frostArmorActive: false,
-            fireballActive: false
-          }
-        }
-      }));
-      return;
-    }
-
-    // Start combat normally
-    const enemy = generateEnemy(gameState.zone);
+    // Show adventure skill selection modal (100% chance now)
+    const availableSkills = generateAdventureSkills();
     updateGameState(state => ({
       ...state,
-      currentEnemy: enemy,
-      inCombat: true,
-      combatLog: [`You encounter a ${enemy.name} in Zone ${enemy.zone}!`],
       adventureSkills: {
         ...state.adventureSkills,
+        availableSkills,
+        showSelectionModal: true,
         selectedSkill: null,
         skillEffects: {
           skipCardUsed: false,
@@ -700,6 +656,37 @@ const useGameState = () => {
     }));
   }, [gameState, updateGameState, generateAdventureSkills]);
 
+  // Checkpoint revival function
+  const reviveAtCheckpoint = useCallback((): boolean => {
+    if (!gameState) return false;
+
+    const coinCost = Math.floor(gameState.coins * 0.5);
+    const gemCost = Math.floor(gameState.gems * 0.5);
+
+    if (gameState.coins < coinCost || gameState.gems < gemCost) return false;
+
+    // Find the last checkpoint (every 5 zones)
+    const lastCheckpoint = Math.floor((gameState.zone - 1) / 5) * 5 + 1;
+    const reviveZone = Math.max(1, lastCheckpoint);
+
+    updateGameState(state => ({
+      ...state,
+      coins: state.coins - coinCost,
+      gems: state.gems - gemCost,
+      zone: reviveZone,
+      playerStats: {
+        ...state.playerStats,
+        hp: state.playerStats.maxHp
+      },
+      inCombat: false,
+      currentEnemy: null,
+      hasUsedRevival: false,
+      combatLog: [`You have been revived at checkpoint Zone ${reviveZone}! Lost ${coinCost} coins and ${gemCost} gems.`]
+    }));
+
+    return true;
+  }, [gameState, updateGameState]);
+
   const attack = useCallback((hit: boolean, category?: string) => {
     if (!gameState || !gameState.currentEnemy) return;
 
@@ -725,9 +712,71 @@ const useGameState = () => {
 
       if (hit) {
         // Player hits enemy
-        const damage = Math.max(1, state.playerStats.atk - enemy.def);
+        let damage = Math.max(1, state.playerStats.atk - enemy.def);
+        
+        // Apply adventure skill effects
+        const skills = state.adventureSkills;
+        
+        // Berserker: +100% damage
+        if (skills.skillEffects.berserkerActive) {
+          damage *= 2;
+        }
+        
+        // Critical Strike: 25% chance for double damage
+        if (skills.skillEffects.criticalStrikeActive && Math.random() < 0.25) {
+          damage *= 2;
+          log.push(`Critical Strike! Double damage!`);
+        }
+        
+        // Double Strike: Each attack hits twice
+        if (skills.skillEffects.doubleStrikeActive) {
+          damage *= 2;
+          log.push(`Double Strike activated!`);
+        }
+        
+        // Ramp: Each correct answer increases damage by 10%
+        if (skills.skillEffects.rampActive) {
+          const rampBonus = 1 + (state.knowledgeStreak.current * 0.1);
+          damage = Math.floor(damage * rampBonus);
+        }
+        
+        // Berserk Rage: Damage increases as HP decreases
+        if (skills.skillEffects.berserkRageActive) {
+          const hpPercent = state.playerStats.hp / state.playerStats.maxHp;
+          const rageBonus = 1 + (1 - hpPercent);
+          damage = Math.floor(damage * rageBonus);
+        }
+        
+        // Blood Pact: Sacrifice HP for massive damage
+        if (skills.skillEffects.bloodPactActive) {
+          const hpSacrifice = Math.floor(state.playerStats.hp * 0.2);
+          newState.playerStats.hp = Math.max(1, state.playerStats.hp - hpSacrifice);
+          damage *= 3;
+          log.push(`Blood Pact: Sacrificed ${hpSacrifice} HP for massive damage!`);
+        }
+        
+        // Elemental Mastery: Bonus damage based on category
+        if (skills.skillEffects.elementalMasteryActive && category) {
+          damage = Math.floor(damage * 1.5);
+          log.push(`Elemental Mastery: +50% damage from ${category}!`);
+        }
+
         enemy.hp = Math.max(0, enemy.hp - damage);
         log.push(`You deal ${damage} damage to the ${enemy.name}!`);
+
+        // Vampiric: Heal 25% of damage dealt
+        if (skills.skillEffects.vampiricActive) {
+          const healing = Math.floor(damage * 0.25);
+          newState.playerStats.hp = Math.min(state.playerStats.maxHp, state.playerStats.hp + healing);
+          log.push(`Vampiric: Healed ${healing} HP!`);
+        }
+        
+        // Poison Blade: Poison enemy for 3 turns
+        if (skills.skillEffects.poisonBladeActive) {
+          enemy.isPoisoned = true;
+          enemy.poisonTurns = 3;
+          log.push(`${enemy.name} is poisoned!`);
+        }
 
         // Update knowledge streak
         newState.knowledgeStreak = {
@@ -740,6 +789,20 @@ const useGameState = () => {
         newState.statistics.correctAnswers += 1;
         if (category) {
           newState.statistics.accuracyByCategory[category].correct += 1;
+        }
+
+        // Health regeneration: Every attack, regenerate 5% health
+        const healthRegen = Math.floor(state.playerStats.maxHp * 0.05);
+        newState.playerStats.hp = Math.min(state.playerStats.maxHp, state.playerStats.hp + healthRegen);
+        if (healthRegen > 0) {
+          log.push(`Regenerated ${healthRegen} HP!`);
+        }
+
+        // Healing Aura: Regenerate 10% HP each turn
+        if (skills.skillEffects.healingAuraActive) {
+          const auraHealing = Math.floor(state.playerStats.maxHp * 0.1);
+          newState.playerStats.hp = Math.min(state.playerStats.maxHp, newState.playerStats.hp + auraHealing);
+          log.push(`Healing Aura: +${auraHealing} HP!`);
         }
 
         if (enemy.hp <= 0) {
@@ -771,12 +834,80 @@ const useGameState = () => {
             newState.merchant.lastFragmentZone = newState.zone;
             log.push(`🧩 You found a Hugoland Fragment!`);
           }
+
+          // Anti-inflation scaling: Check if player needs more than 5 hits to defeat enemies
+          const playerDamage = Math.max(1, newState.playerStats.atk - enemy.def);
+          const hitsNeeded = Math.ceil(enemy.maxHp / playerDamage);
+          
+          if (hitsNeeded > 5) {
+            newState.playerStats.atk *= 2;
+            newState.playerStats.def *= 2;
+            newState.playerStats.maxHp = Math.floor(newState.playerStats.maxHp * 1.5);
+            newState.playerStats.hp = newState.playerStats.maxHp; // Full heal
+            log.push(`🚀 Anti-inflation boost! Your stats have been enhanced!`);
+            log.push(`ATK and DEF doubled, HP increased by 50%!`);
+          }
         }
       } else {
-        // Enemy hits player
-        const damage = Math.max(1, enemy.atk - state.playerStats.def);
-        newState.playerStats.hp = Math.max(0, state.playerStats.hp - damage);
-        log.push(`The ${enemy.name} deals ${damage} damage to you!`);
+        // Enemy hits player - but check for skill effects first
+        let shouldTakeDamage = true;
+        let damage = Math.max(1, enemy.atk - state.playerStats.def);
+        
+        // Shadow Step: First wrong answer doesn't count
+        if (skills.skillEffects.shadowStepUsed === false && skills.selectedSkill?.type === 'shadow_step') {
+          shouldTakeDamage = false;
+          newState.adventureSkills.skillEffects.shadowStepUsed = true;
+          log.push(`Shadow Step: First wrong answer ignored!`);
+        }
+        
+        // Dodge: 50% chance to avoid enemy attacks
+        if (shouldTakeDamage && skills.skillEffects.dodgeUsed === false && skills.selectedSkill?.type === 'dodge' && Math.random() < 0.5) {
+          shouldTakeDamage = false;
+          log.push(`Dodged the attack!`);
+        }
+        
+        // Metal Shield: Block the first enemy attack completely
+        if (shouldTakeDamage && skills.skillEffects.metalShieldUsed === false && skills.selectedSkill?.type === 'metal_shield') {
+          shouldTakeDamage = false;
+          newState.adventureSkills.skillEffects.metalShieldUsed = true;
+          log.push(`Metal Shield: Attack blocked!`);
+        }
+        
+        // Arcane Shield: Immune to damage for first 3 attacks
+        if (shouldTakeDamage && skills.skillEffects.arcaneShieldActive) {
+          shouldTakeDamage = false;
+          // This would need a counter in the skill effects
+          log.push(`Arcane Shield: Immune to damage!`);
+        }
+        
+        // Divine Protection: Cannot die for 5 turns
+        if (shouldTakeDamage && skills.skillEffects.divineProtectionUsed === false && skills.selectedSkill?.type === 'divine_protection') {
+          if (state.playerStats.hp - damage <= 0) {
+            shouldTakeDamage = false;
+            log.push(`Divine Protection: Cannot die!`);
+          }
+        }
+
+        if (shouldTakeDamage) {
+          // Shield Wall: Reduce all damage taken by 50%
+          if (skills.skillEffects.shieldWallActive) {
+            damage = Math.floor(damage * 0.5);
+            log.push(`Shield Wall: Damage reduced by 50%!`);
+          }
+          
+          // Berserker: -50% defense
+          if (skills.skillEffects.berserkerActive) {
+            damage = Math.floor(damage * 1.5);
+          }
+          
+          // Risker: +25% damage taken
+          if (skills.selectedSkill?.type === 'risker') {
+            damage = Math.floor(damage * 1.25);
+          }
+
+          newState.playerStats.hp = Math.max(0, state.playerStats.hp - damage);
+          log.push(`The ${enemy.name} deals ${damage} damage to you!`);
+        }
 
         // Reset knowledge streak
         newState.knowledgeStreak = {
@@ -786,10 +917,30 @@ const useGameState = () => {
         };
 
         if (newState.playerStats.hp <= 0) {
-          log.push('You have been defeated!');
-          newState.inCombat = false;
-          newState.currentEnemy = null;
-          newState.statistics.totalDeaths += 1;
+          // Check for Phoenix revival
+          if (skills.skillEffects.phoenixUsed === false && skills.selectedSkill?.type === 'phoenix') {
+            newState.playerStats.hp = Math.floor(newState.playerStats.maxHp * 0.5);
+            newState.adventureSkills.skillEffects.phoenixUsed = true;
+            log.push(`Phoenix: Revived with 50% HP!`);
+          } else {
+            log.push('You have been defeated!');
+            newState.inCombat = false;
+            newState.currentEnemy = null;
+            newState.statistics.totalDeaths += 1;
+          }
+        }
+      }
+
+      // Handle poison damage
+      if (enemy.isPoisoned && enemy.poisonTurns && enemy.poisonTurns > 0) {
+        const poisonDamage = Math.floor(enemy.maxHp * 0.1);
+        enemy.hp = Math.max(0, enemy.hp - poisonDamage);
+        enemy.poisonTurns -= 1;
+        log.push(`${enemy.name} takes ${poisonDamage} poison damage!`);
+        
+        if (enemy.poisonTurns <= 0) {
+          enemy.isPoisoned = false;
+          log.push(`${enemy.name} is no longer poisoned.`);
         }
       }
 
@@ -1215,14 +1366,43 @@ const useGameState = () => {
   const rollSkill = useCallback((): boolean => {
     if (!gameState || gameState.coins < 100) return false;
 
-    // Generate a random skill
-    const skillTypes = ['coin_vacuum', 'treasurer', 'xp_surge', 'luck_gem', 'enchanter'];
+    // Generate a random skill with actual effects
+    const skillTypes = [
+      'coin_vacuum', 'treasurer', 'xp_surge', 'luck_gem', 'enchanter',
+      'time_warp', 'golden_touch', 'knowledge_boost', 'durability_master',
+      'relic_finder', 'stat_amplifier', 'question_master', 'gem_magnet',
+      'streak_guardian', 'revival_blessing', 'zone_skipper', 'item_duplicator',
+      'research_accelerator', 'garden_booster', 'market_refresh'
+    ];
     const randomType = skillTypes[Math.floor(Math.random() * skillTypes.length)];
     const duration = 2 + Math.floor(Math.random() * 6); // 2-8 hours
     
+    const skillNames = {
+      coin_vacuum: 'Coin Vacuum',
+      treasurer: 'Treasurer',
+      xp_surge: 'XP Surge',
+      luck_gem: 'Lucky Gem',
+      enchanter: 'Enchanter',
+      time_warp: 'Time Warp',
+      golden_touch: 'Golden Touch',
+      knowledge_boost: 'Knowledge Boost',
+      durability_master: 'Durability Master',
+      relic_finder: 'Relic Finder',
+      stat_amplifier: 'Stat Amplifier',
+      question_master: 'Question Master',
+      gem_magnet: 'Gem Magnet',
+      streak_guardian: 'Streak Guardian',
+      revival_blessing: 'Revival Blessing',
+      zone_skipper: 'Zone Skipper',
+      item_duplicator: 'Item Duplicator',
+      research_accelerator: 'Research Accelerator',
+      garden_booster: 'Garden Booster',
+      market_refresh: 'Market Refresh'
+    };
+    
     const skill: MenuSkill = {
       id: Math.random().toString(36).substr(2, 9),
-      name: randomType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
+      name: skillNames[randomType as keyof typeof skillNames] || 'Unknown Skill',
       description: `A powerful temporary skill effect`,
       duration,
       activatedAt: new Date(),
@@ -1246,16 +1426,57 @@ const useGameState = () => {
   const selectAdventureSkill = useCallback((skill: AdventureSkill) => {
     updateGameState(state => {
       const enemy = generateEnemy(state.zone);
+      
+      // Apply skill effects to player stats
+      let modifiedStats = { ...state.playerStats };
+      
+      // Risker: +50% HP but +25% damage taken
+      if (skill.type === 'risker') {
+        modifiedStats.maxHp = Math.floor(modifiedStats.maxHp * 1.5);
+        modifiedStats.hp = modifiedStats.maxHp;
+      }
+      
+      // Berserker: +100% damage but -50% defense
+      if (skill.type === 'berserker') {
+        modifiedStats.atk = Math.floor(modifiedStats.atk * 2);
+        modifiedStats.def = Math.floor(modifiedStats.def * 0.5);
+      }
+
       return {
         ...state,
+        playerStats: modifiedStats,
         adventureSkills: {
           ...state.adventureSkills,
           selectedSkill: skill,
-          showSelectionModal: false
+          showSelectionModal: false,
+          skillEffects: {
+            ...state.adventureSkills.skillEffects,
+            // Activate relevant skill effects
+            truthLiesActive: skill.type === 'truth_lies',
+            lightningChainActive: skill.type === 'lightning_chain',
+            rampActive: skill.type === 'ramp',
+            berserkerActive: skill.type === 'berserker',
+            vampiricActive: skill.type === 'vampiric',
+            timeSlowActive: skill.type === 'time_slow',
+            criticalStrikeActive: skill.type === 'critical_strike',
+            shieldWallActive: skill.type === 'shield_wall',
+            poisonBladeActive: skill.type === 'poison_blade',
+            arcaneShieldActive: skill.type === 'arcane_shield',
+            battleFrenzyActive: skill.type === 'battle_frenzy',
+            elementalMasteryActive: skill.type === 'elemental_mastery',
+            healingAuraActive: skill.type === 'healing_aura',
+            doubleStrikeActive: skill.type === 'double_strike',
+            manaShieldActive: skill.type === 'mana_shield',
+            berserkRageActive: skill.type === 'berserk_rage',
+            stormCallActive: skill.type === 'storm_call',
+            bloodPactActive: skill.type === 'blood_pact',
+            frostArmorActive: skill.type === 'frost_armor',
+            fireballActive: skill.type === 'fireball'
+          }
         },
         currentEnemy: enemy,
         inCombat: true,
-        combatLog: [`You encounter a ${enemy.name} in Zone ${enemy.zone}!`]
+        combatLog: [`You encounter a ${enemy.name} in Zone ${enemy.zone}!`, `${skill.name} is now active!`]
       };
     });
   }, [updateGameState]);
@@ -1385,7 +1606,8 @@ const useGameState = () => {
     skipAdventureSkills,
     useSkipCard,
     spendFragments,
-    selectMerchantReward
+    selectMerchantReward,
+    reviveAtCheckpoint
   };
 };
 

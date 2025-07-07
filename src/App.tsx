@@ -91,6 +91,7 @@ function App() {
     useSkipCard,
     spendFragments,
     selectMerchantReward,
+    reviveAtCheckpoint,
   } = useGameState();
 
   const [currentView, setCurrentView] = useState<GameView>('stats');
@@ -264,6 +265,10 @@ function App() {
           hasUsedRevival={gameState.hasUsedRevival}
           adventureSkills={gameState.adventureSkills}
           onUseSkipCard={useSkipCard}
+          onReviveAtCheckpoint={reviveAtCheckpoint}
+          coins={gameState.coins}
+          gems={gameState.gems}
+          zone={gameState.zone}
         />
       );
     }
@@ -358,6 +363,25 @@ function App() {
               </div>
             )}
 
+            {/* Checkpoint System Info */}
+            <div className="bg-gradient-to-r from-blue-900/50 to-cyan-900/50 p-4 sm:p-6 rounded-xl border border-blue-500/50 backdrop-blur-sm">
+              <div className="text-center">
+                <div className="flex items-center justify-center gap-3 mb-3">
+                  <span className="text-2xl sm:text-3xl">🏁</span>
+                  <h3 className="text-blue-400 font-bold text-lg sm:text-xl">Checkpoint System</h3>
+                </div>
+                <p className="text-white text-base sm:text-lg mb-2">
+                  Next checkpoint: Zone {Math.ceil(gameState.zone / 5) * 5}
+                </p>
+                <p className="text-blue-300 font-semibold text-sm sm:text-base">
+                  Revive at checkpoints for 50% of your coins and gems
+                </p>
+                <p className="text-gray-300 text-xs sm:text-sm mt-2">
+                  Checkpoints are every 5 zones and allow you to continue your adventure even after defeat!
+                </p>
+              </div>
+            </div>
+
             <div className="text-center space-y-4 sm:space-y-6">
               <button
                 onClick={startCombat}
@@ -381,7 +405,7 @@ function App() {
                   <p className="text-red-400 text-sm">
                     {gameState.gameMode.current === 'survival' && gameState.gameMode.survivalLives <= 0
                       ? 'Change game mode or reset to continue!'
-                      : 'Visit the shop to get better equipment and try again!'}
+                      : 'Visit the shop to get better equipment and try again, or use checkpoint revival!'}
                   </p>
                 </div>
               )}

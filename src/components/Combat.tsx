@@ -34,9 +34,14 @@ interface CombatProps {
       truthLiesActive: boolean;
       lightningChainActive: boolean;
       rampActive: boolean;
+      timeSlowActive: boolean;
     };
   };
   onUseSkipCard?: () => void;
+  onReviveAtCheckpoint?: () => boolean;
+  coins?: number;
+  gems?: number;
+  zone?: number;
 }
 
 export const Combat: React.FC<CombatProps> = ({ 
@@ -48,7 +53,11 @@ export const Combat: React.FC<CombatProps> = ({
   knowledgeStreak,
   hasUsedRevival = false,
   adventureSkills,
-  onUseSkipCard
+  onUseSkipCard,
+  onReviveAtCheckpoint,
+  coins = 0,
+  gems = 0,
+  zone = 1
 }) => {
   const [currentQuestion, setCurrentQuestion] = useState<TriviaQuestion | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
@@ -60,8 +69,13 @@ export const Combat: React.FC<CombatProps> = ({
   const [showResult, setShowResult] = useState(false);
   const [lastAnswerCorrect, setLastAnswerCorrect] = useState<boolean | null>(null);
 
-  // Increased time limits to make the game easier
-  const questionTime = (gameMode.current === 'blitz' || gameMode.current === 'bloodlust') ? 5 : 8;
+  // Calculate time limit based on game mode and adventure skills
+  let questionTime = (gameMode.current === 'blitz' || gameMode.current === 'bloodlust') ? 5 : 8;
+  
+  // Time Slow skill: +50% time
+  if (adventureSkills?.skillEffects.timeSlowActive) {
+    questionTime = Math.floor(questionTime * 1.5);
+  }
 
   useEffect(() => {
     let question = getQuestionByZone(enemy.zone);
@@ -160,6 +174,15 @@ export const Combat: React.FC<CombatProps> = ({
     }
   };
 
+  const handleRevive = () => {
+    if (onReviveAtCheckpoint) {
+      const success = onReviveAtCheckpoint();
+      if (!success) {
+        alert('Not enough coins or gems for revival!');
+      }
+    }
+  };
+
   const moveWord = (fromIndex: number, toIndex: number) => {
     const newWords = [...reorderedWords];
     const [movedWord] = newWords.splice(fromIndex, 1);
@@ -202,6 +225,12 @@ export const Combat: React.FC<CombatProps> = ({
       default: return 'bg-blue-600';
     }
   };
+
+  // Calculate checkpoint revival cost
+  const revivalCoinCost = Math.floor(coins * 0.5);
+  const revivalGemCost = Math.floor(gems * 0.5);
+  const canRevive = coins >= revivalCoinCost && gems >= revivalGemCost;
+  const lastCheckpoint = Math.floor((zone - 1) / 5) * 5 + 1;
 
   if (!currentQuestion) {
     return (
@@ -370,6 +399,11 @@ export const Combat: React.FC<CombatProps> = ({
             }`}>
               {timeLeft}s
             </span>
+            {adventureSkills?.skillEffects.timeSlowActive && (
+              <span className="text-blue-400 text-sm bg-blue-900/30 px-2 py-1 rounded">
+                Time Slow Active
+              </span>
+            )}
           </div>
         </div>
 
@@ -509,6 +543,11 @@ export const Combat: React.FC<CombatProps> = ({
           <div className="flex items-center gap-3 mb-3">
             <Heart className="w-5 h-5 text-red-400" />
             <span className="text-white font-semibold">{enemy.name}</span>
+            {enemy.isPoisoned && (
+              <span className="text-green-400 text-xs bg-green-900/30 px-2 py-1 rounded-full">
+                🧪 Poisoned ({enemy.poisonTurns})
+              </span>
+            )}
           </div>
           <div className="w-full bg-gray-700 rounded-full h-4">
             <div 
@@ -530,6 +569,36 @@ export const Combat: React.FC<CombatProps> = ({
         </div>
       </div>
 
+      {/* Checkpoint Revival Option */}
+      {playerStats.hp <= 0 && onReviveAtCheckpoint && (
+        <div className="bg-yellow-900/50 border border-yellow-500/50 p-4 rounded-lg mb-6">
+          <div className="text-center">
+            <h3 className="text-yellow-400 font-bold text-lg mb-2">💀 Checkpoint Revival Available!</h3>
+            <p className="text-white mb-3">
+              Revive at Zone {lastCheckpoint} checkpoint for:
+            </p>
+            <div className="flex justify-center gap-4 mb-4">
+              <span className="text-yellow-400">💰 {revivalCoinCost.toLocaleString()} coins</span>
+              <span className="text-purple-400">💎 {revivalGemCost.toLocaleString()} gems</span>
+            </div>
+            <button
+              onClick={handleRevive}
+              disabled={!canRevive}
+              className={`px-6 py-3 rounded-lg font-bold transition-all ${
+                canRevive
+                  ? 'bg-gradient-to-r from-yellow-600 to-orange-600 text-white hover:from-yellow-500 hover:to-orange-500'
+                  : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              {canRevive ? 'Revive at Checkpoint' : 'Insufficient Resources'}
+            </button>
+            <p className="text-gray-400 text-xs mt-2">
+              Checkpoints are every 5 zones. You'll lose 50% of your coins and gems.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="text-center mt-4 space-y-2">
         <p className="text-sm text-gray-300">
           Answer correctly to <span className="text-green-400 font-semibold">deal damage</span>!
@@ -544,6 +613,9 @@ export const Combat: React.FC<CombatProps> = ({
             💖 Don't worry - you get one free revival if you die!
           </p>
         )}
+        <p className="text-cyan-400 text-sm">
+          💚 You regenerate 5% health with each attack!
+        </p>
       </div>
 
       {/* Combat Log */}
