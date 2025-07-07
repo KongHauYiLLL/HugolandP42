@@ -1,13 +1,14 @@
 export interface TriviaQuestion {
   id: string;
   question: string;
-  type: 'multiple-choice' | 'type-answer' | 'slider';
+  type: 'multiple-choice' | 'type-answer' | 'slider' | 'reorder-words';
   options?: string[];
-  correctAnswer: number | string;
+  correctAnswer: number | string | number[];
   category: string;
   difficulty: 'easy' | 'medium' | 'hard';
   sliderRange?: { min: number; max: number };
   hint?: string;
+  wordsToReorder?: string[];
 }
 
 export const triviaQuestions: TriviaQuestion[] = [
@@ -655,6 +656,28 @@ export const triviaQuestions: TriviaQuestion[] = [
     correctAnswer: 'star wars',
     category: 'Entertainment',
     difficulty: 'medium'
+  },
+
+  // Reorder Words Questions
+  {
+    id: '80',
+    question: 'Put these words in the correct order to form a sentence:',
+    type: 'reorder-words',
+    wordsToReorder: ['The', 'cat', 'is', 'sleeping'],
+    correctAnswer: [0, 1, 2, 3],
+    category: 'Language',
+    difficulty: 'easy',
+    hint: 'Start with "The"'
+  },
+  {
+    id: '81',
+    question: 'Arrange these numbers in ascending order:',
+    type: 'reorder-words',
+    wordsToReorder: ['5', '2', '8', '1'],
+    correctAnswer: [3, 1, 0, 2],
+    category: 'Math',
+    difficulty: 'easy',
+    hint: 'From smallest to largest'
   }
 ];
 
@@ -689,7 +712,7 @@ export const getQuestionByZone = (zone: number): TriviaQuestion => {
   }
 };
 
-export const checkAnswer = (question: TriviaQuestion, userAnswer: string | number): boolean => {
+export const checkAnswer = (question: TriviaQuestion, userAnswer: string | number | number[]): boolean => {
   if (question.type === 'multiple-choice') {
     return userAnswer === question.correctAnswer;
   } else if (question.type === 'slider') {
@@ -698,6 +721,11 @@ export const checkAnswer = (question: TriviaQuestion, userAnswer: string | numbe
     const correctNum = Number(question.correctAnswer);
     const userNum = Number(userAnswer);
     return Math.abs(userNum - correctNum) <= tolerance;
+  } else if (question.type === 'reorder-words') {
+    // Check if the reordered array matches the correct order
+    const userOrder = userAnswer as number[];
+    const correctOrder = question.correctAnswer as number[];
+    return JSON.stringify(userOrder) === JSON.stringify(correctOrder);
   } else {
     // Type answer - normalize both strings for comparison
     const normalizedUserAnswer = String(userAnswer).toLowerCase().trim();
